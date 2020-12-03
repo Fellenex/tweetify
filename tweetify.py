@@ -1,124 +1,102 @@
-#load string of text
-#examine in chunks of 140 characters
-#if no sentence-enders (delimiters) exist, chunk into one tweet
-#else put as many characters as possible up until the last sentence-ender, chunk into one tweet
-#loop
+#Loads a file of text and chunks it into tweets based on sentence-enders, or other punctuation delimiters.
+#Then, saves the text in tweetified form.
 
-class Tweet:
-	def __init__(self, contents="", length=-1):
-		self.text = contents
-		self.size = length
+import os
+import matplotlib.pyplot as plt
 
-	def getText(self):
-		return self.text
-		
-	def getSize(self):
-		return self.size
+primarySplitters = ["!","?",".",",",";","-","\n"]
+secondarySplitAfter = ["}",")","]",">"]
+secondarySplitBefore = ["{","(","[","<"]
+tertiarySplitters = [" "]
+
+SPLITTERS = [primarySplitters, secondarySplitAfter, secondarySplitBefore, tertiarySplitters]
+
+#We would rather split for a primary if it wasn't too many characters behind the secondary/tertiary
+#We would rather split for a secondary if it wasn't too many characters behind the tertiary.
+PRIMARY_BIAS = 100	 #allow a tweet to end earlier if there is a good primary splitter
+SECONDARY_BIAS = 50	 #allow a tweet to end earlier if there is a good secondary splitter
+
+DEBUG = False
+TWEET_LENGTH = 280
 
 def debugIt(debugString):
-	if (False):
-	#if (True):
-		print debugString
+	if DEBUG: print(debugString)
 
 def main():
-	print "Enter file name: "
-	fileName = raw_input()
+	#Get filename from user
+	print("Enter file name: ")
+	fileName = input()
 	with open(fileName, 'r') as f:
-		text = f.read()
-	f.closed
+		originalText = f.read()
+	assert(f.closed)
 
-	primarySplitters = ["!","?",".",",",";","-","\n"]
-	secondarySplitAfter = ["}", ")","]",">"]
-	secondarySplitBefore = ["{","(","[","<",]
-	tertiarySplitters = [" ",]
-	tweets = [] #an array to hold our tweets
+	tweets = [] #a list to hold our tweets
 
 	startIndex = 0
-	while (startIndex < len(text)):
-		primaryIndex = secondaryBeforeIndex = secondaryAfterIndex = tertiaryIndex = 141
-		
-		while (text[startIndex]==" "): #throw away spaces at the start of tweets
+	while (startIndex < len(originalText)):
+		#throw away whitespace at the start of tweets
+		while (originalText[startIndex]==" "):
 			startIndex+=1
-		textChunk = text[startIndex:startIndex+140]
-		reversedChunk = textChunk[::-1]
-		
-		debugIt("\n~~~The Text~~~")
-		debugIt(textChunk)
-		debugIt("~~~End of The Text~~~\n")
-		
-		for primarySplitter in primarySplitters:
-			try:
-				tempIndex = reversedChunk.index(primarySplitter)
-				if (tempIndex < primaryIndex):
-					primaryIndex=tempIndex
-			except ValueError:
-				pass
-				debugIt("\tNo "+primarySplitter+" exists in this string")
-		
-		for secondarySplitter in secondarySplitAfter:
-			try:
-				tempIndex = reversedChunk.index(secondarySplitter)
-				if (tempIndex < secondaryAfterIndex):
-					secondaryAfterIndex=tempIndex
-			except ValueError:
-				pass
-				debugIt("\tNo "+secondarySplitter+" exists in this string")
 
-		for secondarySplitter in secondarySplitBefore:
-			try:
-				tempIndex = reversedChunk.index(secondarySplitter)
-				if (tempIndex < secondaryBeforeIndex):
-					secondaryBeforeIndex=tempIndex
-			except ValueError:
-				pass
-				debugIt("\tNo "+secondarySplitter+" exists in this string")
-				
-		for tertiarySplitter in tertiarySplitters:
-			try:
-				tempIndex = reversedChunk.index(tertiarySplitter)
-				if (tempIndex < tertiaryIndex):
-					tertiaryIndex=tempIndex
-			except ValueError:
-				pass
-				debugIt("\tNo "+secondarySplitter+" exists in this string")
-		
-		#We would rather split for a primary if it wasn't too many characters behind the secondary/tertiary
-		#We would rather split for a secondary if it wasn't too many characters behind the tertiary.
-		primaryBias = 7 #allow a tweet to end up to 7 characters earlier than another split if there is a primary splitter
-		secondaryBias = 4 #allow a tweet to end up to 3 characters earlier than another split if it is secondary, not tertiary
-		secondaryBeforeIndex-=1 #we want to split right before these characters, not after them.
-		
-		if (primaryIndex < primaryBias):
-			#we have a primary index within the guaranteed preference range. Use this one!
-			bestSplitIndex = primaryIndex
-		elif ((secondaryAfterIndex < secondaryBias) or (secondaryBeforeIndex < secondaryBias)):
-			#we have a secondary index within the guaranteed preference range. Use this one!
-			bestSplitIndex = min(secondaryAfterIndex,secondaryBeforeIndex)
+		#We examine the reversed chunk of text because list.index returns the first occurrence.
+		reversedChunk = originalText[startIndex:startIndex+TWEET_LENGTH][::-1]
+
+		potentialIndices = []
+		for i in range(len(SPLITTERS)):
+			#Make a list of indices for each list of splitter characters
+			potentialIndices.append([])
+			for splitChar in SPLITTERS[i]:
+
+				if splitChar in reversedChunk:
+					potentialIndices[i].append(TWEET_LENGTH - reversedChunk.index(splitChar))
+
+		debugIt("Potential indices: "+str(potentialIndices))
+
+		#Get the best index from each list of splitter characters
+		bestIndices = []
+		for i in potentialIndices:
+			bestIndices.append(max(i+[0])) #don't take indices for characters that don't exist
+
+		debugIt("Best indices: "+str(bestIndices))
+
+		#Get the best chunk based on the biases for each type of splitting character
+		if bestIndices[0] >= TWEET_LENGTH - PRIMARY_BIAS:
+			bestEndingIndex = bestIndices[0]
+
+		elif bestIndices[1] >= TWEET_LENGTH - SECONDARY_BIAS:
+			bestEndingIndex = bestIndices[1]
+
+		elif bestIndices[2] >= TWEET_LENGTH - SECONDARY_BIAS:
+			#We've found a secondary starting split character (like an opening paren), so we offset by -1
+			bestEndingIndex = bestIndices[2] - 1
+
 		else:
-			#just find the best split.
-			bestSplitIndex = min(primaryIndex,secondaryAfterIndex,secondaryBeforeIndex,tertiaryIndex)
-		
-		normalizedBestSplitIndex = 140-bestSplitIndex
-		bestChunk = text[startIndex:startIndex+normalizedBestSplitIndex]
-		#print "Characters used:",startIndex, "-",startIndex+normalizedBestSplitIndex
-		
-		tweets.append(Tweet(bestChunk,len(bestChunk)))
-		
-		debugIt("\n~~~The Tweet~~~")
-		debugIt(tweets[-1].getText())
-		debugIt("~~~End of The Tweet~~~\n")
-		startIndex+=normalizedBestSplitIndex
+			#If we haven't found any splitting characters, then we just split by space. Offset by -1 to exclude the space
+			bestEndingIndex = bestIndices[3] - 1
 
+		debugIt("best index: "+str(bestEndingIndex))
+
+		tweets.append(originalText[startIndex : startIndex + bestEndingIndex])
+
+		#Move the starting index forward for the next tweet
+		startIndex += bestEndingIndex
+
+	#Save a .txt with the text split up into tweets
 	fileNamePrefix = fileName.split(".")[0]
 	fileNameSuffix = fileName.split(".")[1]
 	with open(fileNamePrefix+"-tweetified"+"."+fileNameSuffix, 'w') as fw:
 		i=0
-		fw.write("Total number of tweets: "+str(len(tweets))+"\n")
+		fw.write("Converted %s characters turned into %s tweets\n" % (len(originalText), len(tweets)))
 		for tweet in tweets:
 			fw.write("Tweet #"+str(i)+": ")
-			fw.write(tweet.getText())
+			fw.write(tweet)
 			fw.write("\n\n")
 			i+=1
-	f.closed
+	assert(f.closed)
+
+	plt.hist([len(x) for x in tweets])
+	plt.xlabel("Tweet Length (in characters)")
+	plt.ylabel("Frequency")
+	plt.savefig(fileNamePrefix+"-histogram"+".png")
 
 main()
